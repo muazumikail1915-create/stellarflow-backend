@@ -497,6 +497,8 @@ model RemittanceTransaction {
   @@index([asset, createdAt])
   @@index([senderPublicKey])
   @@index([recipientPublicKey])
+  // Index for Mobile Money webhook lookups by external reference (Bug fix: transaction lookup by reference number)
+  @@index([reference])
 }
 
 // Remittance Dispute Model – Issue #834

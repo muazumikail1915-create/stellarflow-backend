@@ -182,9 +182,10 @@ export class AnchorWebhookService {
     newStatus: string,
   ): Promise<{ previousStatus: string; updated: boolean } | null> {
     try {
-      // Find the current transaction
-      const transaction = await prisma.remittanceTransaction.findUnique({
-        where: { id: transactionId },
+      // Find the current transaction by reference number (external Mobile Money transaction ID)
+      // Mobile Money anchors send their external reference as transaction.id in webhooks
+      const transaction = await prisma.remittanceTransaction.findFirst({
+        where: { reference: transactionId },
         select: { id: true, status: true, userId: true },
       });
 

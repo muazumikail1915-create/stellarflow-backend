@@ -134,7 +134,7 @@ describe("AnchorWebhookService", () => {
         .digest("hex");
 
       // Mock database responses
-      mockPrisma.remittanceTransaction.findUnique.mockResolvedValue({
+      mockPrisma.remittanceTransaction.findFirst.mockResolvedValue({
         id: transactionId,
         status: "pending_user_transfer",
         userId: "user-1",
@@ -234,7 +234,7 @@ describe("AnchorWebhookService", () => {
         },
       };
 
-      mockPrisma.remittanceTransaction.findUnique.mockResolvedValue(null);
+      mockPrisma.remittanceTransaction.findFirst.mockResolvedValue(null);
 
       const result = await anchorWebhookService.processWebhook(
         payload,
@@ -266,7 +266,7 @@ describe("AnchorWebhookService", () => {
           },
         };
 
-        mockPrisma.remittanceTransaction.findUnique.mockResolvedValue({
+        mockPrisma.remittanceTransaction.findFirst.mockResolvedValue({
           id: "tx-test",
           status: "pending_user_transfer",
           userId: "user-1",
@@ -324,7 +324,7 @@ describe("AnchorWebhookService", () => {
         },
       };
 
-      mockPrisma.remittanceTransaction.findUnique.mockRejectedValue(
+      mockPrisma.remittanceTransaction.findFirst.mockRejectedValue(
         new Error("Database connection error"),
       );
 
@@ -440,7 +440,7 @@ describe("AnchorWebhookService", () => {
         },
       };
 
-      mockPrisma.remittanceTransaction.findUnique.mockResolvedValue({
+      mockPrisma.remittanceTransaction.findFirst.mockResolvedValue({
         id: "tx-with-extras",
         status: "pending_user_transfer",
         userId: "user-1",
@@ -460,6 +460,57 @@ describe("AnchorWebhookService", () => {
       expect(result.success).toBe(true);
       // Additional fields should not cause issues
       expect(result.transactionId).toBe("tx-with-extras");
+    });
+
+    it("should lookup transaction by reference field not id", async () => {
+      // Mobile Money anchors send external reference as transaction.id
+      const externalReference = "MM-REF-98765";
+      const internalId = "uuid-internal-12345";
+
+      const payload: AnchorWebhookPayload = {
+        transaction: {
+          id: externalReference, // This is the Mobile Money reference number
+          status: "completed",
+        },
+      };
+
+      // Mock that the transaction is found by reference field
+      mockPrisma.remittanceTransaction.findFirst.mockResolvedValue({
+        id: internalId, // Internal database ID
+        reference: externalReference, // External Mobile Money reference
+        status: "pending_user_transfer",
+        userId: "user-1",
+      } as any);
+
+      mockPrisma.remittanceTransaction.update.mockResolvedValue({
+        id: internalId,
+        status: "COMPLETED",
+      } as any);
+
+      const result = await anchorWebhookService.processWebhook(
+        payload,
+        "",
+        testSecret,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.transactionId).toBe(externalReference);
+
+      // Verify findFirst was called with reference field filter
+      expect(mockPrisma.remittanceTransaction.findFirst).toHaveBeenCalledWith({
+        where: { reference: externalReference },
+        select: { id: true, status: true, userId: true },
+      });
+
+      // Verify update uses the internal database ID, not the reference
+      expect(mockPrisma.remittanceTransaction.update).toHaveBeenCalledWith({
+        where: { id: internalId },
+        data: {
+          status: "COMPLETED",
+          updatedAt: expect.any(Date),
+        },
+        select: { id: true, status: true },
+      });
     });
   });
 });
